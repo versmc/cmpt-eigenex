@@ -1,0 +1,10 @@
+
+## My settings
+
+# ignore reserch data directory
+/data/
+/lib/
+.vscode/
+*make.sh
+*a.out
+
