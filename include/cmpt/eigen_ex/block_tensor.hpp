@@ -12,6 +12,11 @@
 namespace cmpt{
 	/// <summary>
 	/// BlockTensor とそれ関連の実装
+	/// 
+	/// # TODO
+	/// 現在数理演算 +,-,*,/,contract, が異なるスカラー間の演算を適当に実装しているが、廃止するつもり
+	/// これは Eigen::Tensor がこれをサポートしていないため
+	/// 代わりに明示的キャスト .cast{Scalar}() を利用する
 	/// </summary>
 	namespace EigenEx {
 
@@ -1400,10 +1405,10 @@ namespace cmpt{
 
 
 			/// <summary>
-			/// キャスト演算子
+			/// キャスト
 			/// </summary>
 			template<class S_>
-			BlockTensorBase<S_, NumDimensions, Derived> cast()const {
+			BlockTensorBase<S_, NumDimensions, BlockTensor<S_,NumDimensions>> cast()const {
 				BlockTensorBase<S_, NumDimensions, BlockTensor<S_,NumDimensions>> btb(blockAddIndices());
 				for (auto& pr : blocks()) {
 					auto& bIndices = pr.first;
@@ -1490,7 +1495,6 @@ namespace cmpt{
 			}
 
 
-
 			BlockTensorBase(const BlockTensorBase& other) = default;
 			BlockTensorBase(BlockTensorBase&& other) = default;
 			BlockTensorBase& operator=(const BlockTensorBase& other) = default;
@@ -1506,13 +1510,14 @@ namespace cmpt{
 
 			/// <summary>
 			/// ブロックを加算する
+			/// ゼロの評価をしない
 			/// </summary>
 			Derived& addBlock(
 				const BlockIndices& sindices,
 				const DenseTensorType& t
 			) {
 				if (t.dimensions() != intraBlockDimensions(sindices)) {
-					throw RuntimeException("");
+					throw RuntimeException("in BlockTensorBase::addBlock(...), invalid dimensions");
 				}
 				else {
 					auto itr = blocks_.find(sindices);
@@ -1607,7 +1612,10 @@ namespace cmpt{
 
 
 
-
+			/// <summary>
+			/// ブロックをセットする
+			/// ゼロ判定をしない(必ずブロック分のストレージが確保される)
+			/// </summary>
 			Derived& setBlock(
 				const BlockIndices& sIndices,
 				DenseTensorType& dt
@@ -1621,6 +1629,11 @@ namespace cmpt{
 				return this->derived();
 			}
 
+			/// <summary>
+			/// 指定したブロックを削除する
+			/// 対応するストレージが開放される
+			/// ゼロ判定をしない(必ずブロック分のストレージが確保される)
+			/// </summary>
 			Derived& eraseBlock(const BlockIndices& sIndices) {
 				blocks_.erase(sIndices);
 				return this->derived();;
@@ -1629,6 +1642,7 @@ namespace cmpt{
 			/// <summary>
 			/// 密行列から構築
 			/// 各ブロックの形状は維持する
+			/// ゼロ判定を行う(ゼロブロックのストレージは確保されない)
 			/// </summary>
 			Derived& setFromDenseTensor(const DenseTensorType& dt) {
 				if (dimensions() != dt.dimensions()) {
@@ -1650,7 +1664,7 @@ namespace cmpt{
 					}
 					block = dt.slice(offsets, extents);
 
-					Eigen::Tensor<Scalar, 0> max_ = block.abs().maximum(iota);
+					Eigen::Tensor<RealScalar, 0> max_ = block.abs().maximum(iota);
 					if (max_() == RealScalar(0.0)) {
 						continue;
 					}
@@ -1740,7 +1754,7 @@ namespace cmpt{
 				for (auto& block_ : blocks_) {
 					auto& block = block_.second;
 					Eigen::Tensor<RealScalar, 0> max_ = block.abs().maximum();
-					if (max_() < threshold) {
+					if (max_() <= threshold) {
 						erase_keys.push_back(block_.first);
 					}
 				}
@@ -1768,7 +1782,7 @@ namespace cmpt{
 			Derived& scalarMultiple(const Scalar& c) {
 				for (auto& block_ : this->blocks_) {
 					auto& block = block_.second;
-					block = -block;
+					block = block*block.constant(c);
 				}
 				return this->derived();
 			}
@@ -1911,34 +1925,26 @@ namespace cmpt{
 
 
 
-			/// <summary>
-			/// コントラクション
-			/// 密行列のコントラクションをカスタムできるオーバーロード使う
-			/// これは 対角テンソル用に作った
-			/// </summary>
-			template<class ScalarB_, Axis NB_, class DerivedB_, class Pairs_, class FContractDenseTensor>
-			typename ContractedTensorTraits<BlockTensorBase, BlockTensorBase<ScalarB_, NB_, DerivedB_>, Pairs_>::TensorR
-				contract(
-					const BlockTensorBase<ScalarB_, NB_, DerivedB_>& tB, const Pairs_& pairs,
-					const FContractDenseTensor& contractDenseTensor
-				)const
-			{
-				using Traits = ContractedTensorTraits<BlockTensorBase, BlockTensorBase<ScalarB_, NB_, DerivedB_>, Pairs_>;
 
-				//using TensorA = typename Traits::TensorA;
-				//using TensorB = typename Traits::TensorB;
-				using TensorR = typename Traits::TensorR;
+			template<Axis NB, class DerivedB, class Pairs, class FContractDenseTensor>
+			BlockTensorBase<
+				Scalar,
+				NumDimensions+NB-2* std::tuple_size<Pairs>::value,
+				BlockTensor<Scalar, NumDimensions + NB - 2 * std::tuple_size<Pairs>::value>
+			> contract(
+				const BlockTensorBase<Scalar, NB, DerivedB>& btB,
+				const Pairs& pairs,
+				const FContractDenseTensor& contractDenseTensor
+			)const{
 
-				using ScalarR = typename Traits::ScalarR;
+				// 変数準備
+				constexpr Axis NA = NumDimensions;
+				constexpr Axis NP = std::tuple_size<Pairs>::value;
+				constexpr Axis NR = NA+NB-2*NP;
+				
+				const auto& btA = *this;
 
-				constexpr Axis NA = Traits::NA;
-				constexpr Axis NB = Traits::NB;
-				constexpr Axis NR = Traits::NR;
-
-
-
-				auto& btA = *this;
-				auto& btB = tB;
+				using BTR = BlockTensorBase<Scalar,NR,BlockTensor<Scalar,NR>>;
 
 				// 引数エラーチェック
 				{
@@ -2010,7 +2016,7 @@ namespace cmpt{
 
 
 				// 各ブロックについて contraction を撮って加える
-				TensorR tR(baiR);
+				BTR btR(baiR);
 				for (auto& bA_ : btA.blocks()) {
 					auto& biA = bA_.first;
 					auto& bA = bA_.second;
@@ -2046,62 +2052,56 @@ namespace cmpt{
 								}
 							}
 
-							Eigen::Tensor<ScalarR, NR> dtR = contractDenseTensor(bA, bB, pairs);
-							tR.addBlock(biR, dtR);
+							Eigen::Tensor<Scalar, NR> dtR = contractDenseTensor(bA, bB, pairs);
+							btR.addBlock(biR, dtR);
 						}
 
 					}
 				}
 
-				return tR;
+				return btR;
 
 			}
 
 
-			/// <summary>
-			/// コントラクション
-			/// </summary>
-			template<class ScalarB_, Axis NB_, class DerivedB_, class Pairs_>
-			typename ContractedTensorTraits<BlockTensorBase, BlockTensorBase<ScalarB_, NB_, DerivedB_>, Pairs_>::TensorR
-				contract(
-					const BlockTensorBase<ScalarB_, NB_, DerivedB_>& tB, const Pairs_& pairs
-				)const
-			{
+			template<Axis NB, class DerivedB, class Pairs>
+			BlockTensorBase<
+				Scalar,
+				NumDimensions + NB - 2 * std::tuple_size<Pairs>::value,
+				BlockTensor<Scalar, NumDimensions + NB - 2 * std::tuple_size<Pairs>::value>
+			> contract(
+				const BlockTensorBase<Scalar, NB, DerivedB>& btB,
+				const Pairs& pairs
+			)const {
 
+				// 変数準備
+				constexpr Axis NA = NumDimensions;
+				constexpr Axis NP = std::tuple_size<Pairs>::value;
+				constexpr Axis NR = NA + NB - 2 * NP;
 
+				const auto& btA = *this;
 
-				using Traits = ContractedTensorTraits<BlockTensorBase, BlockTensorBase<ScalarB_, NB_, DerivedB_>, Pairs_>;
-
-				//using TensorA = typename Traits::TensorA;
-				//using TensorB = typename Traits::TensorB;
-				//using TensorR = typename Traits::TensorR;
-
-				using ScalarR = typename Traits::ScalarR;
-
-				constexpr Axis NA = Traits::NA;
-				constexpr Axis NB = Traits::NB;
-				constexpr Axis NR = Traits::NR;
-
-
-				using DenseTensorA = Eigen::Tensor<Scalar, NA>;
-				using DenseTensorB = Eigen::Tensor<ScalarB_, NB>;
-				using DenseTensorR = Eigen::Tensor<ScalarR, NR>;
-
+				using DenseTensorA = typename BlockTensorBase<Scalar, NumDimensions, Derived>::DenseTensorType;
+				using DenseTensorB = typename BlockTensorBase<Scalar, NB, DerivedB>::DenseTensorType;
+				using DenseTensorR = typename BlockTensorBase<Scalar, NR, BlockTensor<Scalar,NR>>::DenseTensorType;
 
 				return contract(
-					tB,
+					btB,
 					pairs,
 					[](
 						const DenseTensorA& dtA,
 						const DenseTensorB& dtB,
-						const Pairs_& pairs_
+						const Pairs& pairs_
 						)->DenseTensorR {
 							return DenseTensorR(dtA.contract(dtB, pairs_));
 					}
 				);
-
-
 			}
+
+
+			
+
+
 
 
 			/// <summary>
@@ -2286,10 +2286,11 @@ namespace cmpt{
 
 
 
+
+
 		/// <summary>
 		/// BlockTensor の実装
-		/// コンストラクタ
-		/// を実装している
+		/// コンストラクタを実装している
 		/// </summary>
 		template<class Scalar_, integer_type::Axis NumDimensions_>
 		class BlockTensor :public BlockTensorBase<Scalar_, NumDimensions_, BlockTensor<Scalar_, NumDimensions_>> {
@@ -2375,58 +2376,51 @@ namespace cmpt{
 				const BlockTensorBase<Scalar, NumDimensions, Derived>& other
 				) {
 				*this = BlockTensor(other);
+				return *this;
 			}
 
 
 		};
 
 
-
-
-
-		template<class ScalarA, class ScalarB, integer_type::Axis NumDims, class Derived>
-		inline BlockTensorBase<typename std::remove_reference<decltype(ScalarA() + ScalarB())>::type, NumDims, Derived> operator+(
-			const BlockTensorBase<ScalarA, NumDims, Derived>& a,
-			const BlockTensorBase<ScalarB, NumDims, Derived>& b
+		template<class Scalar,integer_type::Axis NumDims,class DerivedA,class DerivedB>
+		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator+(
+			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
+			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			using ScalarR = typename std::remove_reference<decltype(ScalarA() + ScalarB())>::type;
-			BlockTensorBase<ScalarR, NumDims, Derived> r = a;
+			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
 			r += b;
 			return r;
 		}
-
-		template<class ScalarA, class ScalarB, integer_type::Axis NumDims, class Derived>
-		inline BlockTensorBase<typename std::remove_reference<decltype(ScalarA() - ScalarB())>::type, NumDims, Derived> operator-(
-			const BlockTensorBase<ScalarA, NumDims, Derived>& a,
-			const BlockTensorBase<ScalarB, NumDims, Derived>& b
+		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
+		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator-(
+			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
+			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			using ScalarR = typename std::remove_reference<decltype(ScalarA() - ScalarB())>::type;
-			BlockTensorBase<ScalarR, NumDims, Derived> r = a;
+			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
 			r -= b;
 			return r;
 		}
-
-		template<class ScalarA, class ScalarB, integer_type::Axis NumDims, class Derived>
-		inline BlockTensorBase<typename std::remove_reference<decltype(ScalarA()* ScalarB())>::type, NumDims, Derived> operator*(
-			const BlockTensorBase<ScalarA, NumDims, Derived>& a,
-			const BlockTensorBase<ScalarB, NumDims, Derived>& b
+		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
+		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator*(
+			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
+			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			using ScalarR = typename std::remove_reference<decltype(ScalarA()* ScalarB())>::type;
-			BlockTensorBase<ScalarR, NumDims, Derived> r = a;
+			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
 			r *= b;
 			return r;
 		}
-
-		template<class ScalarA, class ScalarB, integer_type::Axis NumDims, class Derived>
-		inline BlockTensorBase<typename std::remove_reference<decltype(ScalarA() / ScalarB())>::type, NumDims, Derived> operator/(
-			const BlockTensorBase<ScalarA, NumDims, Derived>& a,
-			const BlockTensorBase<ScalarB, NumDims, Derived>& b
+		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
+		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator/(
+			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
+			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			using ScalarR = typename std::remove_reference<decltype(ScalarA() / ScalarB())>::type;
-			BlockTensorBase<ScalarR, NumDims, Derived> r = a;
+			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
 			r /= b;
 			return r;
 		}
+
+
 
 
 

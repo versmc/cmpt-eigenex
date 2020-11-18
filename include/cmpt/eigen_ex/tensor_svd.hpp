@@ -4,6 +4,8 @@
 #include "Eigen/SVD"
 #include "Eigen/CXX11/Tensor"
 
+#include "cmpt/eigen_ex/tensor_util.hpp"
+
 
 
 
@@ -166,14 +168,14 @@ namespace cmpt {
 		/// 例2) TensorSVD{Eigen::Tensor{Scalar,4},3,1}
 		/// t(i0,i1,i2,i3) == U(i0,i1,i2,is) S(is,is) V(i3,is)
 		/// </summary>
-		template<class TensorT_, int Urow_, int Vrow_>
+		template<class TensorT_, std::size_t Urow_, std::size_t Vrow_>
 		class TensorSVD {
 		public:	// タイプエイリアス、コンパイル時変数
 
-			using Index = int;
-			using Axis = int;
+			using Index = Eigen::Index;
+			using Axis = std::size_t;
 			template<Index N_>
-			using Indices = Eigen::array<Axis, N_>;
+			using Indices = Eigen::array<Index, N_>;
 
 			static constexpr Axis NT = EigenEx::TensorTraits<TensorT_>::NumDimensions;
 			static constexpr Axis NU = Urow_ + 1;
@@ -260,12 +262,12 @@ namespace cmpt {
 			) {
 
 				// 行列のサイズ取得
-				int mrows = 1;
-				int mcols = 1;
-				for (int i = 0; i < NU - 1; ++i) {
+				Index mrows = 1;
+				Index mcols = 1;
+				for (Axis i = 0; i < NU - 1; ++i) {
 					mrows *= tT.dimension(i);
 				}
-				for (int i = NU - 1; i < NT; ++i) {
+				for (Axis i = NU - 1; i < NT; ++i) {
 					mcols *= tT.dimension(i);
 				}
 
@@ -282,12 +284,12 @@ namespace cmpt {
 					// 分解後のテンソルの形状取得
 					Indices<NU> shapeL;
 					Indices<NV> shapeR;
-					for (int i = 0; i < NU - 1; ++i) {
+					for (Axis i = 0; i < NU - 1; ++i) {
 						shapeL[i] = tT.dimension(i);
 					}
 					shapeL[NU - 1] = U.cols();
 
-					for (int i = 0; i < NV - 1; ++i) {
+					for (Axis i = 0; i < NV - 1; ++i) {
 						shapeR[i] = tT.dimension(NU - 1 + i);
 					}
 					shapeR[NV - 1] = V.cols();
@@ -359,8 +361,8 @@ namespace cmpt {
 			/// </summary>
 			TensorU getTruncatedTensorU(Index rank)const {
 				Indices<NU> shapeU;
-				for (int i = 0, ni = NU; i < ni; ++i) {
-					shapeU[i] = static_cast<int>(tU_.dimension(i));
+				for (Axis i = 0, ni = NU; i < ni; ++i) {
+					shapeU[i] = static_cast<Axis>(tU_.dimension(i));
 				}
 				shapeU[NU - 1] = rank;
 				TensorU ttU = EigenEx::zerowiselyResized<Scalar, NU>(tU_, shapeU);
@@ -374,8 +376,8 @@ namespace cmpt {
 			/// </summary>
 			TensorV getTruncatedTensorV(Index rank)const {
 				Indices<NV> shapeV;
-				for (int i = 0, ni = NU; i < ni; ++i) {
-					shapeV[i] = static_cast<int>(tV_.dimension(i));
+				for (Axis i = 0, ni = NU; i < ni; ++i) {
+					shapeV[i] = static_cast<Axis> (tV_.dimension(i));
 				}
 				shapeV[NV - 1] = rank;
 				TensorU ttV = EigenEx::zerowiselyResized<Scalar, NV>(tV_, shapeV);

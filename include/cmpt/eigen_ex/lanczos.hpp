@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#pragma once
 
 /// <summary>
 /// This header defines classes for lanczos method

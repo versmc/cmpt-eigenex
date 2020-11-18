@@ -1,5 +1,22 @@
 ﻿#pragma once
 
+/// <summary>
+/// This header defines classes for Arnoldi method (eigen solver)
+/// 
+/// coding style is derived from lanczos and Eigen::SelfAdjointEigenSolver
+/// 
+/// # Policy
+/// i
+/// ## Coding style
+/// header only
+/// Eigen-like
+/// 
+/// ## Dependency
+/// c++11					lambda, random, constexpr
+/// Eigen3				Matrix class, SelfAdjointEigenSolver
+/// 
+/// </summary>
+
 
 #include <limits>
 #include <cmath>
@@ -845,6 +862,57 @@ namespace cmpt {
 
 		protected:
 			// helper functions for arnoldi calculation
+
+
+			/// <summary>
+			/// returns sorted indexes which sort the given range
+			/// index is 0 at the start of the given range
+			/// 
+			/// (example)
+			/// vec = [4.0, 0.0, 3.0, 2.0] -> index = [1,3,2,0]
+			/// then,
+			/// [vec[index[0]], vec[index[1]], vec[index[2]], vec[index[3]]] == [0.0, 2.0, 3.0, 4.0]
+			/// </summary>
+			template<class ConstRandomIter>
+			std::vector<std::size_t> compute_sorted_indices(
+				const ConstRandomIter& begin,
+				const ConstRandomIter& end,
+				const std::function<
+				bool(
+					const typename std::iterator_traits<ConstRandomIter>::value_type&,
+					const typename std::iterator_traits<ConstRandomIter>::value_type&
+					)
+				>& pred
+			) {
+				using value_type = typename std::iterator_traits<ConstRandomIter>::value_type;
+				using pair_type = std::pair<std::size_t, value_type const*>;
+				using pairs_type = std::vector<pair_type>;
+				pairs_type pairs;
+				std::size_t index = 0;
+				for (auto itr = begin; itr != end; ++itr) {
+					pairs.push_back(pair_type{ index,&(*itr) });
+					++index;
+				}
+				std::sort(
+					pairs.begin(),
+					pairs.end(),
+					[&pred](const pair_type& a, const pair_type& b)->bool {
+						return pred(*(a.second), *(b.second));
+					}
+				);
+				std::vector<std::size_t> indices;
+				for (auto& pair : pairs) {
+					indices.push_back(pair.first);
+				}
+				return indices;
+			}
+
+
+
+
+
+
+
 
 			/// <summary>
 			/// this function returns index for eigenvalues or eigenvectors in range [0,n)

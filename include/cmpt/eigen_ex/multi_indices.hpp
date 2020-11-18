@@ -140,7 +140,7 @@ namespace cmpt {
 			Index dimension(Axis d)const { return slices_[d].length; }
 
 			Indices dimensions()const {
-				Indices dims;
+				auto dims=Indices();
 				for (Axis d = 0; d < NumDimensions; ++d) {
 					dims[d] = dimension(d);
 				}
