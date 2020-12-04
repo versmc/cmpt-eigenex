@@ -5,7 +5,7 @@
 
 
 namespace cmpt {
-	namespace eigen_ex {
+	namespace EigenEx {
 
 		/// <summary>
 		/// 乱数の Eigen::Tensor{Scalar,NumDims} を取得するための分布関数を表現するクラス

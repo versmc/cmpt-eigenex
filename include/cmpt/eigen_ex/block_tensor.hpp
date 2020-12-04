@@ -12,11 +12,6 @@
 namespace cmpt{
 	/// <summary>
 	/// BlockTensor とそれ関連の実装
-	/// 
-	/// # TODO
-	/// 現在数理演算 +,-,*,/,contract, が異なるスカラー間の演算を適当に実装しているが、廃止するつもり
-	/// これは Eigen::Tensor がこれをサポートしていないため
-	/// 代わりに明示的キャスト .cast{Scalar}() を利用する
 	/// </summary>
 	namespace EigenEx {
 
@@ -1787,8 +1782,8 @@ namespace cmpt{
 				return this->derived();
 			}
 
-			template<class S_, Axis N_, class D_>
-			Derived& operator+=(const BlockTensorBase<S_, N_, D_>& other) {
+			template<class D_>
+			Derived& operator+=(const BlockTensorBase<Scalar, NumDimensions, D_>& other) {
 				if (!this->derived().equalsBlocks(other)) {
 					RuntimeException("");
 				}
@@ -1800,13 +1795,13 @@ namespace cmpt{
 				return this->derived();
 			}
 
-			template<class S_, Axis N_, class D_>
-			Derived& operator-=(const BlockTensorBase<S_, N_, D_>& other) {
+			template<class D_>
+			Derived& operator-=(const BlockTensorBase<Scalar, NumDimensions, D_>& other) {
 				return this->derived() += (-other);
 			}
 
-			template<class S_, Axis N_, class D_>
-			Derived& operator*=(const BlockTensorBase<S_, N_, D_>& other) {
+			template<class D_>
+			Derived& operator*=(const BlockTensorBase<Scalar, NumDimensions, D_>& other) {
 				if (!this->derived().equalsBlocks(other)) {
 					RuntimeException("");
 				}
@@ -1818,8 +1813,8 @@ namespace cmpt{
 				return this->derived();
 			}
 
-			template<class S_, Axis N_, class D_>
-			Derived& operator/=(const BlockTensorBase<S_, N_, D_>& other) {
+			template<class D_>
+			Derived& operator/=(const BlockTensorBase<Scalar, NumDimensions, D_>& other) {
 				if (!this->derived().equalsBlocks(other)) {
 					RuntimeException("");
 				}
@@ -2384,44 +2379,44 @@ namespace cmpt{
 
 
 		template<class Scalar,integer_type::Axis NumDims,class DerivedA,class DerivedB>
-		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator+(
+		inline BlockTensor<Scalar, NumDims> operator+(
 			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
 			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
+			BlockTensor<Scalar, NumDims> r = a;
 			r += b;
 			return r;
 		}
 		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
-		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator-(
+		inline BlockTensor<Scalar, NumDims> operator-(
 			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
 			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
+			BlockTensor<Scalar, NumDims> r = a;
 			r -= b;
 			return r;
 		}
 		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
-		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator*(
+		inline BlockTensor<Scalar, NumDims> operator*(
 			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
 			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
+			BlockTensor<Scalar, NumDims> r = a;
 			r *= b;
 			return r;
 		}
 		template<class Scalar, integer_type::Axis NumDims, class DerivedA, class DerivedB>
-		inline BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> operator/(
+		inline BlockTensor<Scalar, NumDims> operator/(
 			const BlockTensorBase<Scalar, NumDims, DerivedA>& a,
 			const BlockTensorBase<Scalar, NumDims, DerivedB>& b
 			) {
-			BlockTensorBase<Scalar, NumDims, BlockTensor<Scalar, NumDims>> r = a;
+			BlockTensor<Scalar, NumDims> r = a;
 			r /= b;
 			return r;
 		}
 
 
-
+		
 
 
 
@@ -2868,6 +2863,10 @@ namespace cmpt{
 
 
 	}
+
+		
+
+
 }
 
 
