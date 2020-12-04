@@ -6,8 +6,8 @@
 - Lanczos method
 - Arnoldi method
 - multi-dimensional indices interpreter
-- SVD(singular values decomposition) for Tensor
-- BlockTensor (sparse tensor)
+- SVD(Singular Values Decomposition) for Tensor
+- BlockTensor (tensor class for block sparse tensor)
 - numpy-like einsum (under construction)
 - etc...
 
@@ -16,6 +16,6 @@
 for some functions
 ### Eigen3
 For #include "Eigen/...".
-The include path must contains unsupported/CXX11 for Tensor classes.
+The include path must contains unsupported/CXX11 to use Tensor classes.
 
 
