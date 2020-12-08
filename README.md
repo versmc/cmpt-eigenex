@@ -1,4 +1,12 @@
 # Some Extensions for Eigen3
+## Summary
+This repository contains some extensions for [Eigen3](http://eigen.tuxfamily.org/index.php).
+
+
+- header only
+- c++11-like interface
+- Eigen-like interface
+
 
 ## Contents
 
