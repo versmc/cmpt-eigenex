@@ -602,10 +602,10 @@ namespace cmpt {
 		/// </summary>
 		namespace {
 			template <std::size_t N, std::size_t M>
-			void make_indices_impl(Eigen::array<int, N>& indices) {}
+			void make_indices_impl(std::array<int, N>& indices) {}
 
 			template <int N, int M, class Head, class... Args>
-			void make_indices_impl(Eigen::array<int, N>& indices, const Head& head, const Args&... args) {
+			void make_indices_impl(std::array<int, N>& indices, const Head& head, const Args&... args) {
 				indices[M] = static_cast<int>(head);
 				make_indices_impl<N, M + 1, Args...>(indices, args...);
 			}
@@ -614,13 +614,13 @@ namespace cmpt {
 
 		/// <summary>
 		/// make_indices(...)
-		/// 引数から Eigen::array{int,N} を生成する
+		/// 引数から std::array{int,N} を生成する
 		/// static_cast{int}() で int にキャストできるものはキャストする
 		/// キャストの仕様(特に gcc における)のために初期化子リストには意図的に対応していない
 		/// </summary>
 		template <class... Args>
-		auto makeIndices(Args... args)->Eigen::array<int, sizeof...(args)>{
-			using Indices = Eigen::array<int, sizeof...(args)>;
+		auto makeIndices(Args... args)->std::array<int, sizeof...(args)>{
+			using Indices = std::array<int, sizeof...(args)>;
 			Indices indices;
 			make_indices_impl<sizeof...(Args), 0, Args...>(indices, args...);
 			return indices;

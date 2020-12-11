@@ -5,6 +5,7 @@
 /data/
 /lib/
 build/
+build_in_wsl/
 .vscode/
 *make.sh
 *a.out
