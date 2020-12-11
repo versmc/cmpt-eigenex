@@ -4,7 +4,7 @@
 # ignore reserch data directory
 /data/
 /lib/
-/build/
+build/
 .vscode/
 *make.sh
 *a.out
