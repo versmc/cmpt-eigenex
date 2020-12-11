@@ -2,10 +2,12 @@
 ## Summary
 This repository contains some extensions for [Eigen3](http://eigen.tuxfamily.org/index.php).
 
-
+## Features (my memorandum)
 - header only
 - c++11-like interface
 - Eigen-like interface
+- no json interface for Eigen (, which is separated to other repositories)
+- no dependence on my "cmpt/util.hpp"
 
 
 ## Contents
