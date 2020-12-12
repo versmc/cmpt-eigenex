@@ -50,7 +50,7 @@ int main(){
 		es.setComputeEigenvectorsOn(true);																				// the default is true
 		es.setIndicesForConvergence({0});																					// the default is {0}
 		es.setInitialVector(es.lanczosBase().makeRandomVector(random_engine, n)); // set initial vector with random engine
-		es.setMaxEigenvalues(10);																	// the default unlimited
+		es.setMaxEigenvalues(10);																									// compute smallest 10 eigenvalues and eigenvectors. the default unlimited 
 		es.setOrthogonalizingVectors({});																					// the default is {} empty
 		es.setReorthogonalizeInterval(1);																					// the default is 1
 		es.setReserveSize(128);																										// reserve size of lanczos vector default is 128

@@ -1,7 +1,5 @@
 #include <iostream>
 
-
-
 #include "cmpt/eigen_ex/arnoldi.hpp"
 
 
