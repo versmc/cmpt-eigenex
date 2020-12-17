@@ -802,7 +802,18 @@ namespace cmpt {
 						for (Index m = 0, nm = es_tri_.eigenvectors().rows(); m < nm; ++m) {
 							eigenvectors_.col(kk) += es_tri_.eigenvectors()(m, kk) * lanczosBase_.lanczosvectors()[m];
 						}
-						eigenvectors_.col(kk).normalize();
+
+						// phase_factor fixing for eigenvectors
+						Scalar phase_factor = 1.0;
+						for (Index i = 0, ni = eigenvectors_.rows(); i < ni; ++i) {
+							Scalar value = eigenvectors_(i, kk);
+							RealScalar abs_i = std::abs(value);
+							if (abs_i > RealScalar(0.0)) {
+								phase_factor =  value/ abs_i;
+								break;
+							}
+						}
+						eigenvectors_.col(kk) = VectorType((1.0 / phase_factor) * (eigenvectors_.col(kk).normalized()));
 					}
 				}
 				else {

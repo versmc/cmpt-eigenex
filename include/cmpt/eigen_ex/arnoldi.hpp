@@ -849,6 +849,22 @@ namespace cmpt {
 							}
 						}
 					}
+
+					// phase_factor fixing for eigenvectors
+					for (Index c = 0, nc = eigenvectors_.cols(); c < nc; ++c) {
+						Scalar phase_factor = 1.0;
+						for (Index i = 0, ni = eigenvectors_.rows(); i < ni; ++i) {
+							Scalar value = eigenvectors_(i, c);
+							RealScalar abs_i = std::abs(value);
+							if (abs_i > RealScalar(0.0)) {
+								phase_factor = value / abs_i;
+								break;
+							}
+						}
+						eigenvectors_.col(c) = VectorType((1.0 / phase_factor) * (eigenvectors_.col(c).normalized()));
+					}
+					
+
 				}
 				else {
 					eigenvectors_.resize(0, 0);
