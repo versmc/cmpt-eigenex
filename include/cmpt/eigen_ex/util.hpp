@@ -18,10 +18,16 @@
 #include <array>
 #include <vector>
 #include <initializer_list>
+#include <cassert>
 
 #include "Eigen/Core"
 #include "Eigen/Sparse"	// Eigen::Triplet<...>
 #include "Eigen/Eigenvalues"
+
+
+
+#define CMPT_EIGENEX_ASSERT(isValid,message) \
+	assert((isValid)&&message)
 
 
 

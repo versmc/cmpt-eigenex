@@ -20,7 +20,7 @@ namespace cmpt {
 			using RealScalar = typename Eigen::NumTraits<Scalar>::Real;
 			using result_type = Eigen::Tensor<Scalar, NumDims>;
 			//using Dimensions=typename result_type::Dimensions;
-			using Dimensions = typename Eigen::array<int, NumDims>;
+			using Dimensions = typename Eigen::array<Eigen::Index, NumDims>;
 
 			Distribution dist;
 			Dimensions dimensions;

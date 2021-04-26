@@ -38,6 +38,7 @@ namespace cmpt {
 		/// </summary>
 		template<class Index_>
 		inline Index_ periodic_div(Index_ index, Index_ n_range) {
+			CMPT_EIGENEX_ASSERT(n_range > 0, "invalid arguments");
 			if (index >= 0) {
 				return index / n_range;
 			}
@@ -53,6 +54,7 @@ namespace cmpt {
 		/// </summary>
 		template<class Index_>
 		inline Index_ periodic_mod(Index_ index, Index_ n_range) {
+			CMPT_EIGENEX_ASSERT(n_range > 0, "invalid arguments");
 			Index_ slide = periodic_div(index, n_range);
 			return index - slide * n_range;
 		}
@@ -811,13 +813,23 @@ namespace cmpt {
 			Indices begins_;	// [first]
 			Indices ends_;		// [first]
 		public:
-			AddIndices(const Indices& sizes_a = Indices{ 1 }) :sizes_(sizes_a) {
+			AddIndices(const Indices& sizes_a = Indices{}) :sizes_(sizes_a) {
 				Index end = 0;
 				for (auto& size : sizes_) {
 					begins_.push_back(end);
 					end += size;
 					ends_.push_back(end);
 				}
+			}
+
+			void push_back(Index size) {
+				Index end_pre = 0;
+				if (sizes_.size() != 0) {
+					end_pre = ends_.back();
+				}
+				sizes_.push_back(size);
+				begins_.push_back(end_pre);
+				ends_.push_back(end_pre + size);
 			}
 
 			const Indices& sizes()const { return sizes_; }
@@ -888,6 +900,547 @@ namespace cmpt {
 
 
 	}
+
+
+
+	/// <summary>
+	/// DTensor を構築する
+	/// 開発中
+	/// 
+	/// クラスヒエラルキー
+	/// Base とつくクラスは基底クラスであり、外からは利用しない
+	/// 
+	/// DTensorConstRefBase					先頭ポインタとインデックスオブジェクトの const 操作
+	///	^		^   
+	///	|	  |
+	/// |	  DTensorMutableRefBase		先頭ポインタとインデックスオブジェクトの mutable 操作
+	/// |   ^
+	/// |   |
+	/// DTensorRefBase							テンソルの参照として使うオブジェクトのCRTP基底クラス 上2つを適当に継承元として呼び分ける
+	/// ^
+	/// |
+	/// DTensorRef									実際にテンソルの参照として使うオブジェクト
+	/// ^
+	/// |
+	/// DTensorBase									ポインタの所有権を自前で持つテンソルオブジェクトのCRTP基底クラス
+	/// ^
+	/// |
+	/// DTensor											ポインタの所有権を自前で持つテンソルオブジェクト
+	/// 
+	/// 
+	/// einsum関連
+	/// 以下のように計算するのが目標
+	/// C._("i","j")=A._("i","k")*B._("k","j")
+	/// 
+	/// 中間クラスとして以下を作成
+	/// A()
+	/// _(...) が返すクラスとして
+	/// DTensorConstRefWithIIndex{Scalar}:DTensorRef{const Scalar}
+	/// 
+	/// DTensorMutableRefWithIIndex{Scalar}:DTensorRef{Scalar}
+	/// 
+	/// DTensorRefWithIIndex{Scalar}
+	/// 
+	/// _(...) の積で表すクラスとして
+	/// DTensorKroneckerProduct{Scalar}
+	/// ^
+	/// |
+	/// DTensorKroneckerProductWithIIndex{Scalar}
+	/// 
+	/// operator= を評価するクラスとて
+	/// 
+	/// DTensorEinsum{Scalar}
+	/// 
+	/// 評価の仕方
+	/// 1. 各テンソルの直積インデックスと、全テンソルの直積インデックスを生成し、
+	/// 2. 絶対インデックスを全インデックスに変換するオブジェクトを生成、このとき、コントラクションを取る軸を末尾におく
+	/// 3. エレメントごとにループし、和をループさせ足していく
+	/// 
+	/// 
+	/// 
+	/// 
+	/// 遅延評価 einsum 以外は後回し
+	/// 
+	/// Scalar operator({...}) のインターフェースを持つ基底クラスを継承して作るCRTPで適当に呼び分ける
+	/// conjugate() operator+-*/ で作られる他 einsum 関係で作られる
+	/// 
+	/// 
+	/// 
+	/// 
+	/// 
+	/// 
+	/// 
+	/// スパース
+	/// 
+	/// BlockDTensorBase
+	/// ^
+	/// |
+	/// BlockDTensor
+	/// 
+	/// 
+	/// </summary>
+	namespace EigenEx {
+
+
+
+
+
+
+
+
+
+
+
+
+		/// <summary>
+		/// テンソル系の計算の実装部分
+		/// 現在は速度より保守性を重視した実装になっている
+		/// 必要なときにランクを固定した実装を呼ぶことによる速度の最適化を施すつもり
+		/// </summary>
+		namespace DTensorImpl {
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Indices = std::vector<Index>;
+
+
+			template<class PIA, class PIB>
+			inline bool shapeIsMatched(
+				const PIA& idxA,
+				const PIB& idxB
+			) {
+				if (idxA.numDimensions() != idxB.numDimensions()) { return false; }
+				for (Axis d = 0, nd = idxA.numDimensions(); d < nd; ++d) {
+					if (idxA.slices()[d].length != idxB.slices()[d].length) { return false; }
+				}
+				return true;
+			}
+
+			template<class Scalar, class Op>
+			inline void opData(
+				Scalar const* data_in,
+				const DynamicProductIndices& idx_in,
+				Scalar* data_out,
+				const DynamicProductIndices& idx_out,
+				Op op
+			) {
+				if (!shapeIsMatched(idx_in, idx_out)) {
+					throw RuntimeException("shape is not matched");
+				}
+
+				Indices indices;
+				indices.resize(idx_in.numDimensions());
+				for (Index i = 0, ni = idx_in.absoluteSize(); i < ni; ++i) {
+					indices = idx_in.indices(i);
+					Index abs_in = idx_in.absoluteIndex(indices);
+					Index abs_out = idx_out.absoluteIndex(indices);
+					op(data_in[abs_in], data_out[abs_out]);
+				}
+
+			}
+
+
+			template<class Scalar>
+			inline void copyData(Scalar const* data_in, const DynamicProductIndices& idx_in, Scalar* data_out, const DynamicProductIndices& idx_out) {
+				return opData(data_in, idx_in, data_out, idx_out, [](const Scalar& in, Scalar& out) {out = in; });
+			}
+
+			template<class Scalar>
+			inline void addData(Scalar const* data_in, const DynamicProductIndices& idx_in, Scalar* data_out, const DynamicProductIndices& idx_out) {
+				return opData(data_in, idx_in, data_out, idx_out, [](const Scalar& in, Scalar& out) {out += in; });
+			}
+
+			template<class Scalar>
+			inline void subData(Scalar const* data_in, const DynamicProductIndices& idx_in, Scalar* data_out, const DynamicProductIndices& idx_out) {
+				return opData(data_in, idx_in, data_out, idx_out, [](const Scalar& in, Scalar& out) {out -= in; });
+			}
+
+			template<class Scalar>
+			inline void mulData(Scalar const* data_in, const DynamicProductIndices& idx_in, Scalar* data_out, const DynamicProductIndices& idx_out) {
+				return opData(data_in, idx_in, data_out, idx_out, [](const Scalar& in, Scalar& out) {out *= in; });
+			}
+
+			template<class Scalar>
+			inline void divData(Scalar const* data_in, const DynamicProductIndices& idx_in, Scalar* data_out, const DynamicProductIndices& idx_out) {
+				return opData(data_in, idx_in, data_out, idx_out, [](const Scalar& in, Scalar& out) {out /= in; });
+			}
+
+			template<class Scalar, class Op>
+			inline void opInPlace(Scalar* data, const DynamicProductIndices& idx, Op op) {
+				Indices indices;
+				indices.resize(idx.numDimensions());
+				for (Index i = 0, ni = idx.absoluteSize(); i < ni; ++i) {
+					indices = idx.indices(i);
+					Index abs_i = idx.absoluteIndex(indices);
+					op(data[abs_i]);
+				}
+			}
+
+			template<class Scalar>
+			inline void conjugateInPlace(Scalar* data, const DynamicProductIndices& idx) {
+				opInPlace(data, idx, [](Scalar& val) {val = std::conj(val); });
+			}
+			template<class Scalar>
+			inline void setZero(Scalar* data, const DynamicProductIndices& idx) {
+				opInPlace(data, idx, [](Scalar& val) {val = Scalar(0.0); });
+			}
+
+		}
+
+
+
+		/// <summary>
+		/// ポインタとテンソルインデックスを所有するオブジェクト
+		/// ここではポインタの指す先に対して const な操作のみ実装し、mutable な操作は DTensorMutableRefBase に記述する
+		/// </summary>
+		template<class Scalar_,class Derived_>
+		class DTensorConstRefBase:public CRTPBase<Derived_> {
+		public:
+			using Scalar= Scalar_;
+			using Derived = Derived_;
+
+			using ScalarMutable = typename std::remove_const<Scalar>::type;
+			using ScalarConst = const ScalarMutable;
+			using Idx = DynamicProductIndices;
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Axises = std::vector<Axis>;
+			using Indices = std::vector<Index>;
+			
+
+		protected:
+			Scalar* data_;
+			Idx idx_;
+
+			void init(Scalar* data_a,const Idx& idx_a) {
+				data_ = data_a;
+				idx_ = idx_a;
+			}
+
+		public:
+			
+			ScalarConst* data()const { return data_; }
+			const Idx& productIndices()const { return idx_; }
+
+			
+			DTensorConstRefBase& operator=(const DTensorConstRefBase& other) = delete;
+			DTensorConstRefBase& operator=(DTensorConstRefBase&& other) = delete;
+			
+
+			ScalarConst& operator[](Index i)const { return data()[i]; }
+			ScalarConst& operator()(const Indices& indices)const { 
+				return data()[productIndices().absoluteIndex(indices)]; 
+			}
+			
+
+		};
+
+		/// <summary>
+		/// 非 const 型のポインタとテンソルインデックスを所有するオブジェクト
+		/// </summary>
+		template<class Scalar_,class Derived_>
+		class DTensorMutableRefBase: public DTensorConstRefBase <Scalar_,Derived_>{
+		public:
+			using Scalar = Scalar_;
+			using Derived = Derived_;
+
+			using ScalarMutable = typename std::remove_const<Scalar>::type;
+			using ScalarConst = const ScalarMutable;
+			using Idx = DynamicProductIndices;
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Axises = std::vector<Axis>;
+			using Indices = std::vector<Index>;
+
+		protected:
+			
+
+		public:
+
+			template<class DerivedA>
+			Derived& operator=(const DTensorConstRefBase<ScalarMutable,DerivedA>& other) {
+				DTensorImpl::copyData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+			template<class DerivedA>
+			Derived& operator=(const DTensorConstRefBase<ScalarConst, DerivedA>& other) {
+				DTensorImpl::copyData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+
+			template<class DerivedA>
+			Derived& operator+=(const DTensorConstRefBase<Scalar, DerivedA>& other) {
+				DTensorImpl::addData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+			template<class DerivedA>
+			Derived& operator-=(const DTensorConstRefBase<Scalar, DerivedA>& other) {
+				DTensorImpl::subData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+			template<class DerivedA>
+			Derived& operator*=(const DTensorConstRefBase<Scalar, DerivedA>& other) {
+				DTensorImpl::mulData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+			template<class DerivedA>
+			Derived& operator/=(const DTensorConstRefBase<Scalar, DerivedA>& other) {
+				DTensorImpl::divData(other.data(), other.productIndices(), this->data(), this->productIndices());
+				return this->derived();
+			}
+
+			Derived& conjugateInPlace() {
+				DTensorImpl::conjugateInPlace(this->data(), this->productIndices());
+			}
+
+			Derived& setZero() {
+				DTensorImpl::setZero(this->data(), this->productIndices());
+			}
+
+			
+
+
+			ScalarMutable* data(){ return this->data_; }
+			
+			Scalar& operator[](Index i) { return this->data()[i]; }
+			Scalar& operator()(const Indices& indices) { return this->data()[this->productIndices().absoluteIndex(indices)]; }
+
+
+		};
+
+		/// <summary>
+		/// const の有無で DTensorConstRefBase と DTensorMutableRefBase を適当に呼び分ける推論クラス
+		/// </summary>
+		template<class Scalar_,class Derived_>
+		struct DTensorRefTraits {
+			using Scalar = Scalar_;
+			using Derived = Derived_;
+			
+			template<class IsConst,class AlwaysBool>
+			struct Detail {};
+
+			template<class AlwaysBool>
+			struct Detail<std::true_type, AlwaysBool> {
+				using Type = DTensorConstRefBase<Scalar, Derived>;
+			};
+			template<class AlwaysBool>
+			struct Detail<std::false_type, AlwaysBool> {
+				using Type = DTensorMutableRefBase<Scalar, Derived>;
+			};
+
+
+			using Type = typename Detail<typename std::is_const<Scalar>::type, bool>::Type;
+
+
+
+		};
+
+
+		/// <summary>
+		/// CRTPの派生中継点
+		/// </summary>
+		template<class Scalar_, class Derived_>
+		class DTensorRefBase :public DTensorRefTraits<Scalar_,Derived_>::Type{
+		public:
+			
+		};
+
+		/// <summary>
+		/// DTensorRef コンストラクタ関連以外の実装は継承元で行っている
+		/// </summary>
+		template<class Scalar_>
+		class DTensorRef :public DTensorRefBase<Scalar_, DTensorRef<Scalar_>> {
+		public:
+			using Scalar = Scalar_;
+
+			using ScalarMutable = typename std::remove_const<Scalar>::type;
+			using ScalarConst = const ScalarMutable;
+			using Idx = DynamicProductIndices;
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Axises = std::vector<Axis>;
+			using Indices = std::vector<Index>;
+
+			DTensorRef() { this->init(nullptr, Idx()); }
+			DTensorRef(Scalar* data_a, const Idx& idx_a) { this->init(data_a, idx_a); }
+			DTensorRef(const DTensorRef& other) = delete;
+			DTensorRef(DTensorRef&& other) = delete;
+			
+			
+			DTensorRef& operator=(const DTensorRef& other) {
+				return DTensorMutableRefBase<Scalar, DTensorRef>::operator=(other);
+			}
+			
+			template<class DerivedA> DTensorRef& operator=(const DTensorConstRefBase<ScalarConst, DerivedA>& other) {
+				return DTensorMutableRefBase<Scalar, DTensorRef>::operator=(other);
+			}
+			template<class DerivedA> DTensorRef& operator=(const DTensorConstRefBase<ScalarMutable, DerivedA>& other) {
+				return DTensorMutableRefBase<Scalar, DTensorRef>::operator=(other);
+			}
+		};
+
+
+		/// <summary>
+		/// DTensor の基底クラス
+		/// 独自のメモリ領域を確保する
+		/// 本クラスはインデックスを常に colmn-major で割り当てる
+		/// </summary>
+		template<class Scalar_,class Derived_>
+		class DTensorBase:public DTensorRefBase<Scalar_,Derived_> {
+		public:
+			using Scalar = Scalar_;
+			using Derived = Derived_;
+
+			using ScalarMutable = typename std::remove_const<Scalar>::type;
+			using ScalarConst = const ScalarMutable;
+			using Idx = DynamicProductIndices;
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Axises = std::vector<Axis>;
+			using Indices = std::vector<Index>;
+
+		protected:
+			std::vector<Scalar> buffer_;
+			
+			void init() { 
+				DTensorRefBase<Scalar, Derived>::init(nullptr, Idx()); 
+				buffer_.resize(0); 
+			}
+
+			
+			void init(const Indices& shape) {
+				Idx idx(shape);
+
+				Index bufferSize = 0;
+				for (Axis d = 0, nd = idx.numDimensions(); d < nd; ++d) {
+					auto slice = idx.slices()[d];
+					Index end = slice.start + slice.length * slice.stride;
+					if (bufferSize < end) {
+						bufferSize = end;
+					}
+				}
+				buffer_.resize(bufferSize);
+				DTensorRefBase<Scalar, Derived>::init(buffer_.data(), idx);
+				
+			}
+
+			//void init(const Idx& idx) {init(idx.dimensions());}
+
+
+
+			template<class DerivedA>
+			void init(const DTensorRefBase<ScalarMutable, DerivedA>& other) {
+				Idx pi(other.productIndices().dimensions());
+				this->init(pi);
+				DTensorMutableRefBase<Scalar, Derived>::operator=(other);	// Mutable 必要 なぜかわからない
+			}
+
+			template<class DerivedA>
+			void init(const DTensorRefBase<ScalarConst, DerivedA>& other) {
+				this->init(other.productIndices().dimensions());
+				
+				DTensorMutableRefBase<Scalar, Derived>::operator=(other); // Mutable 必要 なぜかわからない
+			}
+			
+		public:
+
+			const std::vector<Scalar>& buffer()const { return buffer_; }
+
+			
+		};
+
+
+		/// <summary>
+		/// DTensor コンストラクタ関連以外の実装は継承元で行っている
+		/// </summary>
+		template<class Scalar_>
+		class DTensor:public DTensorBase<Scalar_,DTensor<Scalar_>>{
+		public:
+			using Scalar = Scalar_;
+
+			using ScalarMutable = typename std::remove_const<Scalar>::type;
+			using ScalarConst = const ScalarMutable;
+			using Idx = DynamicProductIndices;
+
+			using Axis = integer_type::Axis;
+			using Index = integer_type::Index;
+			using Axises = std::vector<Axis>;
+			using Indices = std::vector<Index>;
+
+
+		public:
+
+			DTensor() { 
+				DTensorBase<Scalar, DTensor<Scalar>>::init(); 
+			}
+
+			DTensor(const Indices& shape) { 
+				DTensorBase<Scalar, DTensor<Scalar>>::init(shape); 
+			}
+
+			template<class DerivedA>
+			DTensor(const DTensorRefBase<ScalarMutable, DerivedA>& other) { 
+				DTensorBase<Scalar, DTensor<Scalar>>::init(other);
+			}
+			template<class DerivedA>
+			DTensor(const DTensorRefBase<ScalarConst, DerivedA>& other) {
+				DTensorBase<Scalar, DTensor<Scalar>>::init(other);
+			}
+
+
+
+		};
+
+
+		using IIndex = std::string;
+
+		template<class Scalar_>
+		class DTensorRefWithIIndex{
+		public:
+			using Scalar = Scalar_;
+			
+			DTensorRef<Scalar> ref_;
+			std::vector<IIndex> iindices_;
+			
+
+		};
+
+
+		template<class Scalar_>
+		class DTensorKroneckerProductRef {
+		public:
+			using Scalar = Scalar_;
+			using Idx = DynamicProductIndices;
+
+		protected:
+			std::vector<DTensorRef<Scalar>> dts_;	// [i] -> ([absi] <-> [i0,...,iN-1])
+			Idx idx_;	// [abs] <-> [abs0,...,absM-1]
+		public:
+
+		};
+
+		template<class Scalar_>
+		class DTensorKroneckerProductRefWithIIndex {
+		public:
+			using Scalar = Scalar_;
+
+			DTensorKroneckerProductRef<Scalar> kpRef_;
+			std::vector<IIndex> iIndices_;
+
+
+		};
+
+
+
+
+	}
+
+
+	
 
 
 

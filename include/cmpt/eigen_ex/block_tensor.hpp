@@ -2420,6 +2420,25 @@ namespace cmpt{
 
 
 
+		// BlockTensor についてノルムの計算の関数
+
+		template<class Scalar, EigenEx::integer_type::Axis N, class Derived>
+		typename Eigen::NumTraits<Scalar>::Real blockTensorSquaredNorm(const EigenEx::BlockTensorBase<Scalar, N, Derived>& bt) {
+			using RealScalar = typename Eigen::NumTraits<Scalar>::Real;
+			RealScalar sqNorm(0.0);
+			for (auto& pr : bt.blocks()) {
+				auto& block = pr.second;
+				Eigen::Map<const Eigen::Matrix<Scalar, Eigen::Dynamic, 1>> mv(block.data(), block.size());
+				sqNorm += mv.squaredNorm();
+			}
+			return sqNorm;
+		}
+
+		template<class Scalar, EigenEx::integer_type::Axis N, class Derived>
+		typename Eigen::NumTraits<Scalar>::Real blockTensorNorm(const EigenEx::BlockTensorBase<Scalar, N, Derived>& bt) {
+			return std::sqrt(blockTensorSquaredNorm(bt));
+		}
+
 
 
 
